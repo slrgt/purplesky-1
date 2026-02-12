@@ -23,8 +23,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-const CACHE_NAME = 'purplesky-v2';
-const STATIC_CACHE = 'purplesky-static-v2';
+const CACHE_NAME = 'purplesky-v3';
+const STATIC_CACHE = 'purplesky-static-v3';
 const IMAGE_CACHE = 'purplesky-images-v1';
 const API_CACHE = 'purplesky-api-v1';
 
@@ -131,6 +131,30 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.endsWith('.wasm')) {
     event.respondWith(cacheFirst(event.request, STATIC_CACHE));
     return;
+  }
+
+  // Navigation requests under our base: serve index.html from cache (SPA fallback).
+  // GitHub Pages returns 404 for dynamic routes; fetching can trigger redirects that
+  // cause loops. Serving cached index.html ensures SPA routing works reliably.
+  if (event.request.mode === 'navigate') {
+    const path = url.pathname;
+    const isAppRoute = path === BASE || path === BASE.slice(0, -1) || path.startsWith(BASE);
+    const isStaticFile = /\.(js|css|json|wasm|svg|png|jpg|jpeg|gif|ico|webp|webmanifest)$/i.test(path);
+    if (isAppRoute && !isStaticFile) {
+      event.respondWith(
+        caches.match(BASE + 'index.html').then(async (cached) =>
+          cached || (async () => {
+            try {
+              const r = await fetch(new Request(BASE + 'index.html'));
+              return r.ok ? r : await caches.match(BASE + 'index.html');
+            } catch {
+              return await caches.match(BASE + 'index.html');
+            }
+          })()
+        )
+      );
+      return;
+    }
   }
 
   // Static assets: Cache-first
